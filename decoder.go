@@ -232,7 +232,54 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 			var dummy []interface{}
 			pslice = reflect.New(reflect.TypeOf(dummy)).Elem()
 		} else if err = checkType(val, reflect.Slice); err != nil {
-			return err
+			// Some functions of SoftLayer XML-RPC APIs such as SoftLayer_Network_Storage::removeAccessFromHostList
+			// return empty array `<array> </data></array>` instead of empty data and it causes unmarshal errors.
+			// The following logic returns nil when `val` is not an array but the xml entry is an empty array.
+
+			var tkErr error
+
+			// White spaces
+			if tok, tkErr = dec.Token(); tkErr != nil {
+				return err
+			}
+			if t, ok := tok.(xml.CharData); !ok || (len(strings.TrimSpace(string((t.Copy())))) > 0) {
+				return err
+			}
+
+			// <data/> - start
+			if tok, tkErr = dec.Token(); tkErr != nil {
+				return err
+			}
+			if t, ok := tok.(xml.StartElement); !ok || (t.Name.Local != "data") {
+				return err
+			}
+
+			// <data/> - end
+			if tok, tkErr = dec.Token(); tkErr != nil {
+				return err
+			}
+			if t, ok := tok.(xml.EndElement); !ok || (t.Name.Local != "data") {
+				return err
+			}
+
+			// White spaces
+			if tok, tkErr = dec.Token(); tkErr != nil {
+				return err
+			}
+			if t, ok := tok.(xml.CharData); !ok || (len(strings.TrimSpace(string((t.Copy())))) > 0) {
+				return err
+			}
+
+			// </array>
+			if tok, tkErr = dec.Token(); tkErr != nil {
+				return err
+			}
+			if t, ok := tok.(xml.EndElement); !ok || (t.Name.Local != "array") {
+				return err
+			}
+
+
+			return nil
 		}
 
 	ArrayLoop:
